@@ -1,38 +1,43 @@
 const express = require('express');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const Groq = require('groq-sdk');
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 // Hifadhi mazungumzo kwa kila mtumiaji
 const conversations = new Map();
 
-// Maelezo ya bot
-const SYSTEM_PROMPT = `Wewe ni JAMII AI — msaidizi wa AI anayezungumza Kiswahili.
+const SYSTEM_PROMPT = `Wewe ni JAMII AI — msaidizi wa AI anayezungumza Kiswahili safi.
 Una sehemu tatu:
 1. 🏥 AFYA — Ushauri wa afya na magonjwa
-2. 📚 ELIMU — Msaada wa masomo na mitihani  
+2. 📚 ELIMU — Msaada wa masomo na mitihani
 3. 💰 BIASHARA — Ushauri wa biashara na fedha
 
-Sheria:
-- Jibu kwa Kiswahili rahisi daima
-- Jibu fupi na wazi (WhatsApp inafaa majibu mafupi)
+Sheria muhimu:
+- Jibu kwa Kiswahili rahisi DAIMA
+- Jibu fupi na wazi (mistari 3-5 tu — WhatsApp inafaa majibu mafupi)
 - Kwa afya: daima pendekeza hospitali kwa matatizo makubwa
-- Kuwa rafiki na wa kusaidia
+- Kuwa rafiki, mwenye huruma na wa kusaidia
+- Ukisalimiwa, jibu kwa upole na uliza unahitaji msaada wa nini
 
-Mwanzoni kabisa uliza mtumiaji: "Karibu JAMII AI! 🌍 Unahitaji msaada wa nini leo?
-1️⃣ Afya
-2️⃣ Elimu  
-3️⃣ Biashara"`;
+Mara ya kwanza mtumiaji anapoandika, jibu hivi:
+"Karibu JAMII AI! 🌍 Mimi ni msaidizi wako wa AI.
+
+Unahitaji msaada wa nini leo?
+1️⃣ Afya 🏥
+2️⃣ Elimu 📚
+3️⃣ Biashara 💰
+
+Andika namba au niulize swali lolote!"`;
 
 // Webhook ya WhatsApp
 app.post('/webhook', async (req, res) => {
   const incomingMsg = req.body.Body?.trim() || '';
   const from = req.body.From || '';
-  console.log('ujumbe umepokelewa'),
+
   console.log(`Ujumbe kutoka ${from}: ${incomingMsg}`);
 
   // Pata au anza mazungumzo mapya
@@ -41,24 +46,30 @@ app.post('/webhook', async (req, res) => {
   }
   const history = conversations.get(from);
 
+  // Ongeza ujumbe wa mtumiaji
+  history.push({ role: 'user', content: incomingMsg });
+
+  // Limit history — hifadhi mazungumzo 20 tu
+  if (history.length > 20) history.splice(0, 2);
+
   try {
-    const model = genAI.getGenerativeModel({ 
-      model: 'gemini-2.0-flash-lite',
-      systemInstruction: SYSTEM_PROMPT,
+    const completion = await groq.chat.completions.create({
+      model: 'llama-3.1-8b-instant',
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        ...history
+      ],
+      max_tokens: 300,
+      temperature: 0.7,
     });
 
-    const chat = model.startChat({ history });
-    const result = await chat.sendMessage(incomingMsg);
-    const reply = result.response.text();
+    const reply = completion.choices[0]?.message?.content || 
+                  'Samahani, jaribu tena! 🙏';
 
-    // Hifadhi mazungumzo
-    history.push(
-      { role: 'user', parts: [{ text: incomingMsg }] },
-      { role: 'model', parts: [{ text: reply }] }
-    );
+    // Hifadhi jibu la AI
+    history.push({ role: 'assistant', content: reply });
 
-    // Limit history (maswali 20 tu kuhifadhi memory)
-    if (history.length > 40) history.splice(0, 2);
+    console.log(`Jibu: ${reply}`);
 
     // Jibu WhatsApp kwa TwiML
     const twiml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -70,11 +81,13 @@ app.post('/webhook', async (req, res) => {
     res.send(twiml);
 
   } catch (error) {
-    console.error('Hitilafu:', error);
+    console.error('Hitilafu ya Groq:', error.message);
+
     const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Message>Samahani, kuna tatizo la muda mfupi. Tafadhali jaribu tena! 🙏</Message>
 </Response>`;
+
     res.set('Content-Type', 'text/xml');
     res.send(twiml);
   }
@@ -82,8 +95,16 @@ app.post('/webhook', async (req, res) => {
 
 // Health check
 app.get('/', (req, res) => {
-  res.json({ status: 'JAMII AI WhatsApp Bot inafanya kazi! 🚀' });
+  res.json({ 
+    status: '✅ JAMII AI WhatsApp Bot inafanya kazi!',
+    model: 'Groq llama-3.1-8b-instant',
+    powered_by: 'Code Geng Technology - Free & Fast 🚀'
+  });
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server inaendesha kwenye port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`🚀 JAMII AI Server inaendesha kwenye port ${PORT}`);
+  console.log(`✅ Groq API iko tayari!`);
+});
+    
