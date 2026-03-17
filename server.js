@@ -32,7 +32,7 @@ Mwanzoni kabisa uliza mtumiaji: "Karibu JAMII AI! 🌍 Unahitaji msaada wa nini 
 app.post('/webhook', async (req, res) => {
   const incomingMsg = req.body.Body?.trim() || '';
   const from = req.body.From || '';
-
+  console.log('ujumbe umepokelewa'),
   console.log(`Ujumbe kutoka ${from}: ${incomingMsg}`);
 
   // Pata au anza mazungumzo mapya
